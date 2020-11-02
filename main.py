@@ -4,6 +4,10 @@ import random
 import shutil
 import time
 import warnings
+from scipy.io import loadmat
+from collections import Counter
+from PIL import Image
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -17,6 +21,7 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+from torch.utils.data import Dataset, DataLoader
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -76,6 +81,48 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 
 best_acc1 = 0
 
+##### COSTUM DATASET ###################################################################
+class carDataset(Dataset):
+    def __init__(self, root, split, transform):
+        # --------------------------------------------
+        # Initialize paths, transforms, and so on
+        # --------------------------------------------
+        self.transform = transform
+
+        # Load image path and annotations
+        mat = loadmat(f'{root}/{split}_list.mat', squeeze_me=True) # split = 'train', 'valid'
+        self.imgs = mat['img_paths']
+        str_labels = mat['labels']
+        vocabulary = Counter()
+        vocabulary.update(str_labels)
+        self.vocab = [label for label in vocabulary] # ['car1', 'car2', ...]
+        # Get index by string label: vocab.index('Buick Regal GS 2012')
+        # Get string label by index: vocab[939]
+        self.lbls = torch.from_numpy(np.array([self.vocab.index(item) for item in str_labels]))
+        assert len(self.imgs) == len(self.lbls), 'mismatched length!'
+        print('Total data in {} split: {}'.format(split, len(self.imgs)))
+
+        #############################################################
+
+    def __getitem__(self, index):
+        # --------------------------------------------
+        # 1. Read from file (using numpy.fromfile, PIL.Image.open)
+        # 2. Preprocess the data (torchvision.Transform)
+        # 3. Return the data (e.g. image and label)
+        # --------------------------------------------
+        imgpath = self.imgs[index]
+        img = Image.open(imgpath).convert('RGB')
+        lbl = self.lbls[index]
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, lbl
+
+    def __len__(self):
+        # --------------------------------------------
+        # Indicate the total size of the dataset
+        # --------------------------------------------
+        return len(self.imgs)
+##########################################################################################
 
 def main():
     args = parser.parse_args()
@@ -110,7 +157,6 @@ def main():
     else:
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
-
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -199,43 +245,60 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
-    testdir = os.path.join(args.data, 'val')
+    # traindir = os.path.join(args.data, 'train')
+    # valdir = os.path.join(args.data, 'train')
+    testdir = os.path.join(args.data, 'test')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        transforms.Compose([
+    # train_dataset = datasets.ImageFolder(
+    #     traindir,
+    #     transforms.Compose([
+    #         transforms.RandomResizedCrop(224),
+    #         transforms.RandomHorizontalFlip(),
+    #         transforms.ToTensor(),
+    #         normalize,
+    #     ]))
+
+    #######################################################################################################
+    train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
-        ]))
+        ])
+    # valid_transform = transforms.Compose([
+    #         transforms.Resize(256),
+    #         transforms.CenterCrop(224),
+    #         transforms.ToTensor(),
+    #         normalize,
+    #     ])
+    # Create train/valid datasets
+    train_set = carDataset(root='./data',
+                        split='train', transform=train_transform)
+    # valid_set = carDataset(root='./data',
+    #                     split='valid', transform=valid_transform)
+    ########################################################################################################
+
+
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     else:
         train_sampler = None
 
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
+    train_loader = DataLoader(
+        train_set, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True)
+    # val_loader = torch.utils.data.DataLoader(
+    #     valid_set),
+    #     batch_size=args.batch_size, shuffle=False,
+    #     num_workers=args.workers, pin_memory=True)
 
-    if args.evaluate:
-        validate(val_loader, model, criterion, args)
-        return
+    # if args.evaluate:
+    #     validate(val_loader, model, criterion, args)
+    #     return
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -246,19 +309,19 @@ def main_worker(gpu, ngpus_per_node, args):
         train(train_loader, model, criterion, optimizer, epoch, args)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        # acc1 = validate(val_loader, model, criterion, args)
 
         # remember best acc@1 and save checkpoint
-        is_best = acc1 > best_acc1
-        best_acc1 = max(acc1, best_acc1)
-
+        # is_best = acc1 > best_acc1
+        # best_acc1 = max(acc1, best_acc1)
+        is_best = 0
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
                 and args.rank % ngpus_per_node == 0):
             save_checkpoint({
                 'epoch': epoch + 1,
                 'arch': args.arch,
                 'state_dict': model.state_dict(),
-                'best_acc1': best_acc1,
+                # 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
             }, is_best)
 
@@ -281,7 +344,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     for i, (images, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
-
+        # print(type(images))
+        # print(target)
         if args.gpu is not None:
             images = images.cuda(args.gpu, non_blocking=True)
         if torch.cuda.is_available():
