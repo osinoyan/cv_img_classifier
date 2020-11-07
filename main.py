@@ -354,7 +354,7 @@ def main_worker(gpu, ngpus_per_node, args):
         now = datetime.now().strftime("%m/%d %H:%M:%S")
         print(
             'Training started at (' + startTime + ') and finished at ('
-            + now + ') -- [ ' + args.epochs + ' epoch(s) ]'
+            + now + ') -- [ ' + str(args.epochs) + ' epoch(s) ]'
         )
         runTest(test_loader, model, args)
 
@@ -551,8 +551,8 @@ def adjust_learning_rate(optimizer, epoch, args):
 
 
 def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions
-       for the specified values of k"""
+    """Computes the accuracy over the k top predictions"""
+    """for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
         batch_size = target.size(0)
