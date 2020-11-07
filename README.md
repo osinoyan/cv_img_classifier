@@ -8,7 +8,10 @@ The following specs were used to create the original solution.
 - Ubuntu 16.04 LTS
 
 ## Outline
-[TOC]
+1. [Installation](#Installation)
+2. [Dataset Preparation](#Dataset-Preparation)
+3. [Training](#Training)
+
 
 ## Installation
 All requirements should be detailed in requirements.txt. Using Anaconda is strongly recommended.
@@ -31,11 +34,11 @@ Unzip *cs-t0828-2020-hw1.zip* and make sure to place the training and testing im
 ```
     data
     +- train
-        +- 000001.jpg
-        +- ...
+    |   +- 000001.jpg
+    |   +- ...
     +- test
-        +- 000004.jpg
-        +- ...
+    |   +- 000004.jpg
+    |   +- ...
 ```
 ### Convert .csv file to .mat file
 To generate a train_list.mat for training, run *make_dataset_list.py* using the following command:
