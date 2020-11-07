@@ -28,9 +28,11 @@ from torch.utils.data import Dataset, DataLoader
 
 n_class = 196
 
-model_names = sorted(name for name in models.__dict__
+model_names = sorted(
+    name for name in models.__dict__
     if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+    and callable(models.__dict__[name])
+)
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
@@ -38,8 +40,8 @@ parser.add_argument('data', metavar='DIR',
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     choices=model_names,
                     help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
+                    ' | '.join(model_names) +
+                    ' (default: resnet18)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -81,16 +83,16 @@ parser.add_argument('--gpu', default=None, type=int,
 parser.add_argument('--multiprocessing-distributed', action='store_true',
                     help='Use multi-processing distributed training to launch '
                          'N processes per node, which has N GPUs. This is the '
-                         'fastest way to use PyTorch for either single node or '
-                         'multi node data parallel training')
+                         'fastest way to use PyTorch for either single node or'
+                         ' multi node data parallel training')
 # TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-parser.add_argument('--test', dest='test', default='', type=str, metavar='PATH',
-                    help='path to model (default: none)')
+parser.add_argument('--test', dest='test', default='', type=str,
+                    metavar='PATH', help='path to model (default: none)')
 
 best_acc1 = 0
 vocab = []
 
-##### COSTUM DATASET ###################################################################
+
 class carDataset(Dataset):
     def __init__(self, root, split, transform):
         # --------------------------------------------
@@ -100,15 +102,18 @@ class carDataset(Dataset):
         self.transform = transform
 
         # Load image path and annotations
-        mat = loadmat(f'{root}/{split}_list.mat', squeeze_me=True) # split = 'train', 'valid'
+        mat = loadmat(f'{root}/{split}_list.mat', squeeze_me=True)
         self.imgs = mat['img_paths']
         str_labels = mat['labels']
         vocabulary = Counter()
         vocabulary.update(str_labels)
-        vocab = [label for label in vocabulary] # ['car1', 'car2', ...]
+        # vocab: ['Buick Regal GS 2012', 'car2', ...]
+        vocab = [label for label in vocabulary]
         # Get index by string label: vocab.index('Buick Regal GS 2012')
         # Get string label by index: vocab[939]
-        self.lbls = torch.from_numpy(np.array([vocab.index(item) for item in str_labels]))
+        self.lbls = torch.from_numpy(
+            np.array([vocab.index(item) for item in str_labels])
+        )
         assert len(self.imgs) == len(self.lbls), 'mismatched length!'
         print('Total data in {} split: {}'.format(split, len(self.imgs)))
         print('number of img class: {}'.format(len(vocab)))
@@ -132,6 +137,7 @@ class carDataset(Dataset):
         # --------------------------------------------
         return len(self.imgs)
 
+
 class carTestDataset(Dataset):
     def __init__(self, main_dir, transform):
         # --------------------------------------------
@@ -154,13 +160,13 @@ class carTestDataset(Dataset):
         if self.transform is not None:
             img = self.transform(img)
         return img, imgpath
-    
+
     def __len__(self):
         # --------------------------------------------
         # Indicate the total size of the dataset
         # --------------------------------------------
         return len(self.imgs)
-##########################################################################################
+
 
 def main():
     args = parser.parse_args()
@@ -191,10 +197,13 @@ def main():
         args.world_size = ngpus_per_node * args.world_size
         # Use torch.multiprocessing.spawn to launch distributed processes: the
         # main_worker process function
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+        mp.spawn(main_worker,
+                 nprocs=ngpus_per_node,
+                 args=(ngpus_per_node, args))
     else:
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
+
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -203,17 +212,39 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
 
-    # create model/ load model
+    # create model/ load model -----------------------------------------------
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
         model = models.__dict__[args.arch](pretrained=True)
-        ## Change the last layer
+        # change the last layer
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, n_class)
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
 
+    # whether is using GPU ---------------------------------------------------
+    if not torch.cuda.is_available():
+        print('using CPU, this will be slow')
+    elif args.gpu is not None:
+        torch.cuda.set_device(args.gpu)
+        model = model.cuda(args.gpu)
+    else:
+        # DataParallel will divide and allocate batch_size
+        # to all available GPUs
+        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
+            model.features = torch.nn.DataParallel(model.features)
+            model.cuda()
+        else:
+            model = torch.nn.DataParallel(model).cuda()
+
+    # define loss function (criterion) and optimizer -------------------------
+    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+    optimizer = torch.optim.SGD(model.parameters(), args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+
+    # load a checkpoint to run testing ---------------------------------------
     if args.test:
         if os.path.isfile(args.test):
             print("=> loading checkpoint '{}'".format(args.test))
@@ -233,26 +264,7 @@ def main_worker(gpu, ngpus_per_node, args):
         else:
             print("=> no checkpoint found at '{}'".format(args.test))
 
-    if not torch.cuda.is_available():
-        print('using CPU, this will be slow')
-    elif args.gpu is not None:
-        torch.cuda.set_device(args.gpu)
-        model = model.cuda(args.gpu)
-    else:
-        # DataParallel will divide and allocate batch_size to all available GPUs
-        if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-            model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
-        else:
-            model = torch.nn.DataParallel(model).cuda()
-
-    # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-
-    # optionally resume from a checkpoint
+    # optionally resume from a checkpoint ------------------------------------
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
@@ -277,7 +289,7 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-    
+
     train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
@@ -291,57 +303,54 @@ def main_worker(gpu, ngpus_per_node, args):
             normalize,
         ])
 
-    # Create train/test datasets
-    train_set = carDataset(root='./data', split='train', transform=train_transform)
+    # create train/test datasets ---------------------------------------------
+    train_set = carDataset(
+        root='./data', split='train', transform=train_transform
+    )
     test_set = carTestDataset(main_dir='./data/test', transform=test_transform)
 
-    if args.distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    else:
-        train_sampler = None
+    train_sampler = None
 
     train_loader = DataLoader(
         train_set, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=args.workers, pin_memory=True, sampler=train_sampler)
+        num_workers=args.workers, pin_memory=True, sampler=train_sampler
+    )
 
-    test_loader = DataLoader(test_set, batch_size=args.batch_size,
-        shuffle=False, num_workers=args.workers)
+    test_loader = DataLoader(
+        test_set, batch_size=args.batch_size,
+        shuffle=False, num_workers=args.workers
+    )
 
+    # test/train data --------------------------------------------------------
     if args.test:
         runTest(test_loader, model, args)
     else:
         startTime = datetime.now().strftime("%m/%d %H:%M:%S")
         print('Start training at ' + startTime)
-        
+
         for epoch in range(args.start_epoch, args.epochs):
             if args.distributed:
                 train_sampler.set_epoch(epoch)
             adjust_learning_rate(optimizer, epoch, args)
 
             # train for one epoch
-            top1 = train(train_loader, model, criterion, optimizer, epoch, args)
-
-            # evaluate on validation set
-            # acc1 = validate(val_loader, model, criterion, args)
-
-            # remember best acc@1 and save checkpoint
-            # is_best = acc1 > best_acc1
-            # best_acc1 = max(acc1, best_acc1)
-
-            # remember best acc@1 and save checkpoint
+            top1 = train(train_loader, model, criterion,
+                         optimizer, epoch, args)
             is_best = top1 > best_acc1
             best_acc1 = max(top1, best_acc1)
-            
-            if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                    and args.rank % ngpus_per_node == 0):
+
+            if (not args.multiprocessing_distributed
+                or (args.multiprocessing_distributed
+                    and args.rank % ngpus_per_node == 0)):
                 save_checkpoint({
                     'epoch': epoch + 1,
                     'arch': args.arch,
                     'state_dict': model.state_dict(),
                     'best_acc1': best_acc1,
-                    'optimizer' : optimizer.state_dict(),
+                    'optimizer': optimizer.state_dict(),
                 }, is_best)
-        ##################### TEST after TRAINING ###########################################
+
+        # test after training
         now = datetime.now().strftime("%m/%d %H:%M:%S")
         print(
             'Training started at (' + startTime + ') and finished at ('
@@ -397,6 +406,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
     return top1.avg
 
+
 def validate(val_loader, model, criterion, args):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -441,6 +451,7 @@ def validate(val_loader, model, criterion, args):
 
     return top1.avg
 
+
 def runTest(test_loader, model, args):
     # switch to evaluate mode
     model.eval()
@@ -461,6 +472,7 @@ def runTest(test_loader, model, args):
     predsWriteCsv(all_imgpaths, all_preds)
     return
 
+
 def predsWriteCsv(imgpaths, preds):
     print(len(imgpaths))
     print(len(preds))
@@ -471,18 +483,23 @@ def predsWriteCsv(imgpaths, preds):
         writer = csv.writer(csvfile)
         writer.writerow(['id', 'label'])
         for i in range(len(imgpaths)):
-            get_id = imgpaths[i].split('/')[-1].split('.')[0] # './test/00939.jpg' => '00939'
+            # convert './test/00939.jpg' => '00939'
+            get_id = imgpaths[i].split('/')[-1].split('.')[0]
             get_label = vocab[preds[i]].split('  ')[0]
             writer.writerow([get_id, get_label])
     print(filename + ' writen successfully.')
     return
+
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     now = datetime.now()
     filename = now.strftime("%m%d%H") + '_cp.pth.tar'
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, now.strftime("%m%d%H") + '_model_best.pth.tar')
+        shutil.copyfile(
+            filename,
+            now.strftime("%m%d%H") + '_model_best.pth.tar'
+        )
 
 
 class AverageMeter(object):
@@ -527,14 +544,15 @@ class ProgressMeter(object):
 
 
 def adjust_learning_rate(optimizer, epoch, args):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+    """Sets learning rate to the initial LR decayed by 10 every 30 epochs"""
     lr = args.lr * (0.1 ** (epoch // 30))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
 
 def accuracy(output, target, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
+    """Computes the accuracy over the k top predictions
+       for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
         batch_size = target.size(0)
