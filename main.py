@@ -217,8 +217,12 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> using pre-trained model '{}'".format(args.arch))
         model = models.__dict__[args.arch](pretrained=True)
         # change the last layer
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, n_class)
+        if(args.arch[:5] == 'resne'):
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, n_class)
+        elif(args.arch[:8] == 'densenet'):
+            num_ftrs = model.classifier.in_features
+            model.classifier = nn.Linear(num_ftrs, n_class)
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()

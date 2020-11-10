@@ -1,3 +1,4 @@
 data
 *.pth.tar
 *output.csv
+output_*.csv

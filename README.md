@@ -3,7 +3,7 @@ Code for image classification applying resnet50 using pytorch.
 
 [Github link](https://github.com/osinoyan/cv_img_classifier)
 
-## Environmont
+## Environment
 The following specs were used to create the original solution.
 - Ubuntu 16.04 LTS
 
@@ -53,12 +53,16 @@ To train models, run following commands.
 ```
 $ python main.py -a resnet50 --epochs 100 --pretrained [path_to_dataset]
 ```
+```
+$ python main.py -a densenet161 --epochs 100 --pretrained [path_to_dataset]
+```
 
 The expected training times are:
 
 Model | GPUs | Image size | Training Epochs | Training Time
 ------------ | ------------- | ------------- | ------------- | -------------
-resnet50 | 4x TitanXp | 224 | 100 | 70 min
+resnet50 | 4x TitanXp | 224 | 100 | 45 min
+densenet161 | 4x TitanXp | 224 | 100 | 1 hr 30 min
 
 ## References
 The pytorch implementation based on [ImageNet training in PyTorch](https://github.com/pytorch/examples/tree/master/imagenet)
